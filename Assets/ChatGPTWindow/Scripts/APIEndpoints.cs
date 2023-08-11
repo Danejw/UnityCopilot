@@ -14,10 +14,10 @@ namespace UnityCopilot
         public const string EnvironmentDesignerUrl = "https://localhost:7208/api/OpenAI/EnvironmentDesigner";
 
         // Python Server
-        public const string ProgrammerPythonUrl = "http://127.0.0.1:8000/programmer/";
-        public const string PlotPythonUrl = "http://127.0.0.1:8000/plot/";
-        public const string CharacterPythonUrl = "http://127.0.0.1:8000/character/";
-        public const string EnvironmentPythonUrl = "http://127.0.0.1:8000/environment/";
-        public const string StoryPythonUrl = "http://127.0.0.1:8000/story/";
+        public const string ProgrammerPythonUrl = "programmer/";
+        public const string PlotPythonUrl = "plot/";
+        public const string CharacterPythonUrl = "character/";
+        public const string EnvironmentPythonUrl = "environment/";
+        public const string StoryPythonUrl = "story/";
     }
 }
