@@ -8,5 +8,6 @@ namespace UnityCopilot.Models
         public string role;
         public string content;
         public string name;
+        public float cost;
     }
 }

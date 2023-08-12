@@ -203,10 +203,10 @@ namespace UnityCopilot
 
             ChatMessage response = await SendWebRequest<ChatMessage>(url, "POST", null, jsonData);
 
-            if (debug) Debug.Log("Response: " + response);
-
             if (response != null)
             {
+                if (debug) Debug.Log($"{response.name} - {response.role} : {response.cost} : {response.content}");
+
                 return response;
             }
             else
@@ -215,7 +215,7 @@ namespace UnityCopilot
                 {
                     role = "assistant",
                     name = "Default",
-                    content = "I'm sorry, I couldn't fullfill your request."
+                    content = "I'm sorry, I couldn't fullfill your request.",
                 };
                 return default;
             }

@@ -454,6 +454,12 @@ namespace UnityCopilot.Editor
                 string afterCode = message.content.Substring(start);
                 GUILayout.TextField(afterCode, GUILayout.ExpandWidth(true));
 
+                // Display Cost
+                if (message.role.Contains("assistant"))
+                {
+                    GUILayout.Label(message.cost.ToString());
+                }
+
                 EditorGUI.EndDisabledGroup();
                 GUILayout.EndVertical();
             }
