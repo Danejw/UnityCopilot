@@ -1,23 +1,18 @@
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace UnityCopilot
 {
     public static class APIEndpoints
     {
-        // ASP.Net Server
-        public const string ChatUrl = "https://localhost:7208/api/OpenAI/ConversationalChatBot";
-        public const string ProgrammerUrl = "https://localhost:7208/api/OpenAI/UnityProgrammer";
-        public const string StoryDesignerUrl = "https://localhost:7208/api/OpenAI/StoryDesigner";
-        public const string CharacterDesignerUrl = "https://localhost:7208/api/OpenAI/CharacterDesigner";
-        public const string EnvironmentDesignerUrl = "https://localhost:7208/api/OpenAI/EnvironmentDesigner";
-
         // Python Server
-        public const string ProgrammerPythonUrl = "programmer/";
-        public const string PlotPythonUrl = "plot/";
-        public const string CharacterPythonUrl = "character/";
-        public const string EnvironmentPythonUrl = "environment/";
-        public const string StoryPythonUrl = "story/";
+        public const string ProgrammerUrl = "programmer/";
+        public const string PlotUrl = "plot/";
+        public const string CharacterUrl = "character/";
+        public const string EnvironmentUrl = "environment/";
+        public const string StoryUrl = "story/";
+        public const string GrammarCorrectionUrl = "grammar/";
+        public const string SummarizationUrl = "summarization/";
+        public const string KeywordExtractionUrl = "keywords/";
+        public const string StyleUrl = "style/";
+        public const string CriticUrl = "critic/";
+        public const string AutoUrl = "auto/";
     }
 }

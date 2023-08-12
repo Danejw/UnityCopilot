@@ -71,8 +71,60 @@ namespace UnityCopilot.Utils
             {
                 string content = File.ReadAllText(path);
 
+                // Remove all spaces and new lines
+                //content = content.Replace(" ", "").Replace("\n", "").Replace("\r", "");
+
                 Debug.Log(content);
                 return content;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("Failed to read script content: " + e.Message);
+                return null;
+            }
+        }
+
+        // This regular expression tries to match methods in a C# file.
+        // It's simplistic and won't handle edge cases.
+        private static readonly string methodPattern = @"(public|private|protected|static|void|\w+ \w+)(\s+\w+\s*)\(([^)]*)\)\s*{";
+
+        public static List<string> CSharpCodeSpliter(UnityEngine.Object obj)
+        {
+            string path = AssetDatabase.GetAssetPath(obj);
+
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogError("The object is not a valid asset.");
+                return null;
+            }
+
+            if (!path.EndsWith(".cs"))
+            {
+                Debug.LogError("The object is not a C# script.");
+                return null;
+            }
+
+            try
+            {
+                string content = File.ReadAllText(path);
+
+                var matches = Regex.Matches(content, methodPattern);
+                var methods = new List<string>();
+
+                for (int i = 0; i < matches.Count; i++)
+                {
+                    int startIndex = matches[i].Index;
+                    int endIndex = (i < matches.Count - 1) ? matches[i + 1].Index : content.Length;
+
+                    methods.Add(content.Substring(startIndex, endIndex - startIndex));
+                }
+
+                foreach(var method in methods)
+                {
+                    Debug.Log(method);
+                }
+
+                return methods;
             }
             catch (System.Exception e)
             {

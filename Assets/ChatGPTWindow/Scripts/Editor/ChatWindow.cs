@@ -12,37 +12,50 @@ using Newtonsoft.Json;
 
 namespace UnityCopilot.Editor
 {
-    public class ChatWindow : EditorWindow
+    public partial class ChatWindow : EditorWindow
     {
         // TODO: allow the ability to use all types of logs as the context. But do it in a way that I won't cloggin up the context length
         // TODO: allow the ability to use uploaded folders and files as part of the conext without clogging up the context length
-        
-        [System.Serializable]
-        public class ChatHistory
-        {
-            public List<ChatMessage> history { get; set; }
-        }
-
 
         private bool debug = true;
 
         // enums
         public enum Tab
         {
-            Login,
             Chat,
-            Settings,
-            Logs
+            Logs,
+            Settings
         }
-        private Tab selectedTab = Tab.Login;
+        private Tab selectedTab = Tab.Chat;
+
+        public enum UserStatus
+        {
+            LoggedIn,
+            LoggedOut,
+        }
+        private UserStatus userSatus = UserStatus.LoggedOut;
+
+        public enum SignOptions
+        {
+            Login,
+            Register,
+        }
+        private SignOptions signOption = SignOptions.Login;
+
 
         public enum Assistant
         {
-            Programmer, 
-            Plot,
-            CharacterDesigner, 
-            EnvironmentDesigner,
-            StoryDesigner
+            Programmer,
+            PlotCreator,
+            CharacterCreator,
+            EnvironmentCreator,
+            StoryCreator,
+            StyleCreator,
+            GrammarCorrection,
+            KeywordExtraction,
+            Summarizer,
+            Critic,
+            Auto
         }
         private Assistant selectedAssistant = Assistant.Programmer;
 
@@ -56,11 +69,10 @@ namespace UnityCopilot.Editor
 
         public enum SettingOptions
         {
-            APIEndpoints,
             Pathing,
             Appearance
         }
-        private SettingOptions selectedSettingsTab = SettingOptions.APIEndpoints;
+        private SettingOptions selectedSettingsTab = SettingOptions.Pathing;
 
         public enum Log
         {
@@ -75,6 +87,8 @@ namespace UnityCopilot.Editor
         private const string SKIN_PATH = "Assets/ChatGPTWindow/GUISkin.guiskin";
         GUISkin skin;
 
+        // User
+        private User currentUser;
 
         // Paths // TODO: put these into their own static class and reference it from there
         [SerializeField] private string scriptPath;
@@ -96,17 +110,25 @@ namespace UnityCopilot.Editor
         private bool showChatHistorys = false;
 
         // Log tab variables
-        private CustomLogger log = new CustomLogger();
+        private LogController log = new LogController();
 
         /// <summary>
         /// Send the latest error message with the chat history
         /// </summary>
         private bool applyLogging = true;
 
+        // Login variables
         string username = string.Empty;
         string password = string.Empty;
 
- 
+        // Register variables
+        string registerUsername = string.Empty;
+        string registerEmail = string.Empty;
+        string registerPassword = string.Empty;
+        string registerFullName = string.Empty;
+
+
+
         [MenuItem("Tools/Unity Co-Pilot")]
         public static void ShowWindow()
         {
@@ -116,6 +138,12 @@ namespace UnityCopilot.Editor
         private void OnGUI()
         {
             if (skin != null) GUI.skin = skin;
+
+
+
+            DrawUserInfo();
+
+            DrawSignInOptions();
 
             DrawMainToolbar();
         }
@@ -140,13 +168,12 @@ namespace UnityCopilot.Editor
         // Main Tabs
         private void DrawMainToolbar()
         {
+            if (userSatus.Equals(UserStatus.LoggedOut)) { return; }
+
             selectedTab = (Tab)GUILayout.Toolbar((int)selectedTab, Enum.GetNames(typeof(Tab)));
 
             switch (selectedTab)
             {
-                case Tab.Login:
-                    DrawLoginTab();
-                    break;
                 case Tab.Chat: // Chat tab
                     DrawChatTab();
                     break;
@@ -159,48 +186,183 @@ namespace UnityCopilot.Editor
             }
         }
 
-        private async void DrawLoginTab()
+
+        private void DrawSignInOptions()
         {
+            if (userSatus.Equals(UserStatus.LoggedIn)) { return; }
+
+            signOption = (SignOptions)GUILayout.Toolbar((int)signOption, Enum.GetNames(typeof(SignOptions)));
+
+            switch (signOption)
+            {
+                case SignOptions.Login:
+                    DrawLoginForm();
+                    break;
+                case SignOptions.Register:
+                    DrawRegistrationForm();
+                    break;
+            }
+        }
+
+        private async void DrawLoginForm()
+        {
+            // Calculate the centered position for the login box
+            float boxWidth = 300; // or whatever width you want
+            float boxHeight = 300; // or whatever height you want
+            Rect centeredRect = new Rect((Screen.width - boxWidth) / 2, (Screen.height - boxHeight) / 2, boxWidth, boxHeight);
+
+            // Define custom box style with padding
+            GUIStyle customBoxStyle = new GUIStyle(GUI.skin.box);
+            customBoxStyle.padding = new RectOffset(20, 20, 20, 20); // 20 units of padding on all sides
+
+            GUILayout.BeginArea(centeredRect, customBoxStyle); // Begin a new GUI area for the login box using the custom style
+
             GUILayout.BeginVertical();
 
-            username = GUILayout.TextField(username);
-            password = GUILayout.TextField(password);
+            // Title for the Login Box
+            GUIStyle centeredLabelStyle = new GUIStyle(GUI.skin.label);
+            centeredLabelStyle.alignment = TextAnchor.MiddleCenter;
+            GUILayout.Label("Login", centeredLabelStyle);
+            GUILayout.Space(10); // Add some space for better visuals
 
-            
+            // Username and Password Fields
+            GUILayout.Label("Username");
+            username = GUILayout.TextField(username);
+            GUILayout.Label("Password");
+            password = GUILayout.PasswordField(password, '*');
+
+            // Login Button
             if (GUILayout.Button("Login"))
             {
                 await APIRequest.Login(username, password);
-                password = string.Empty;
+                currentUser = await APIRequest.GetCurrentUser();
+
+                if (currentUser != null)
+                {
+                    username = string.Empty;
+                    password = string.Empty;
+
+                    userSatus = UserStatus.LoggedIn;
+                }
             }
 
-            if (GUILayout.Button("Logout"))
+            // Register Button
+            if (GUILayout.Button("Register"))
             {
-                APIRequest.Logout();
-                username = string.Empty;
-                password = string.Empty;
-            }
-
-            if (GUILayout.Button("Get Current User Data"))
-            {
-                var user = await APIRequest.GetCurrentUser();
-                if(debug) Debug.Log(user.username);
-            }
-
-
-            if (GUILayout.Button("Buy Credits"))
-            {
-                var user = await APIRequest.AddCredits(5);
-                if (debug) Debug.Log(user.credits);
-            }
-
-
-            if (GUILayout.Button("Spend Credits"))
-            {
-                var user = await APIRequest.RemoveCredits(1);
-                if (debug) Debug.Log(user.credits);
+                signOption = SignOptions.Register;
             }
 
             GUILayout.EndVertical();
+            GUILayout.EndArea(); // End the GUI area
+        }
+
+
+        private async void DrawRegistrationForm()
+        {
+            // Define custom box style with padding
+            GUIStyle customBoxStyle = new GUIStyle(GUI.skin.box);
+            customBoxStyle.padding = new RectOffset(20, 20, 20, 20);
+
+            // Center the box on the screen
+            float boxWidth = 300;
+            float boxHeight = 400;
+            float x = (Screen.width - boxWidth) / 2;
+            float y = (Screen.height - boxHeight) / 2;
+
+            GUILayout.BeginArea(new Rect(x, y, boxWidth, boxHeight), customBoxStyle);
+
+            GUILayout.BeginVertical();
+
+            // Title for the Registration Box
+            GUIStyle centeredLabelStyle = new GUIStyle(GUI.skin.label);
+            centeredLabelStyle.alignment = TextAnchor.MiddleCenter;
+            GUILayout.Label("Registration", centeredLabelStyle);
+
+            // Input fields
+            GUILayout.Label("Username");
+            registerUsername = GUILayout.TextField(registerUsername);
+
+            GUILayout.Label("Email");
+            registerEmail = GUILayout.TextField(registerEmail);
+
+            GUILayout.Label("Password");
+            registerPassword = GUILayout.PasswordField(registerPassword, '*');
+
+            GUILayout.Label("Full Name (Optional)");
+            registerFullName = GUILayout.TextField(registerFullName);
+
+            if (GUILayout.Button("Register"))
+            {
+                var user = await APIRequest.RegisterUser(registerUsername, registerEmail, registerPassword, registerFullName);
+                if(debug) Debug.Log(user);
+                if(debug) Debug.Log(user.username);
+                if(debug) Debug.Log(user.access_token);
+
+                currentUser = await APIRequest.GetCurrentUser();
+
+                if (currentUser != null)
+                {
+                    registerUsername = string.Empty;
+                    registerEmail = string.Empty;
+                    registerPassword = string.Empty;
+                    registerFullName = string.Empty;
+
+                    userSatus = UserStatus.LoggedIn;
+                }
+            }
+            if (GUILayout.Button("Login"))
+            {
+                signOption = SignOptions.Login;
+            }
+
+            GUILayout.EndVertical();
+            GUILayout.EndArea();
+        }
+
+        private async Task DrawUserInfo()
+        {
+            if (currentUser != null)
+            {
+
+                GUILayout.BeginHorizontal();
+
+                // Aligns the username to the left
+                GUILayout.Label(currentUser.username);
+
+                // Add a buy button next to the credits
+                if (GUILayout.Button("Logout"))
+                {
+                    APIRequest.Logout();
+                    currentUser = null;
+                    username = string.Empty;
+                    password = string.Empty;
+
+                    userSatus = UserStatus.LoggedOut;
+                }
+
+                // Adds a flexible space which pushes everything after it to the right
+                GUILayout.FlexibleSpace();
+
+                // Display the credits
+                GUILayout.Label($"Credits: {currentUser.credits}");
+
+                // Add a buy button next to the credits
+                if (GUILayout.Button("Buy"))
+                {
+                    // Handle the button click logic here
+                    currentUser = await APIRequest.AddCredits(5);
+                    if (debug) Debug.Log(currentUser.credits);
+                }
+
+                GUILayout.EndHorizontal();
+            }
+            else
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("User needs to log in.");
+                GUILayout.EndHorizontal();
+            }
+
         }
 
         private void DrawChatTab()
@@ -340,9 +502,6 @@ namespace UnityCopilot.Editor
 
             switch (selectedSettingsTab)
             {
-                case SettingOptions.APIEndpoints:
-                    DrawEndpointsTab();
-                    break;
                 case SettingOptions.Pathing:
                     DrawPathTab();
                     break;
@@ -452,40 +611,6 @@ namespace UnityCopilot.Editor
             GUILayout.EndVertical();
         }
 
-        private void DrawEndpointsTab()
-        {
-            GUILayout.BeginVertical();
-
-            GUILayout.Space(10);
-
-            GUILayout.Label("Chat API Endpoint URL:");
-            GUILayout.TextField(APIEndpoints.ChatUrl);
-
-            GUILayout.Space(10);
-
-            GUILayout.Label("Unity Programmer API Endpoint URL:");
-            GUILayout.TextField(APIEndpoints.ProgrammerUrl);
-
-            GUILayout.Space(10);
-
-            GUILayout.Label("Story Designer API Endpoint URL:");
-            GUILayout.TextField(APIEndpoints.StoryDesignerUrl);
-
-            GUILayout.Space(10);
-
-            GUILayout.Label("Character Designer API Endpoint URL:");
-            GUILayout.TextField(APIEndpoints.CharacterDesignerUrl);
-
-            GUILayout.Space(10);
-
-            GUILayout.Label("Environment Designer API Endpoint URL:");
-            GUILayout.TextField(APIEndpoints.EnvironmentDesignerUrl);
-
-            GUILayout.Space(10);
-
-            GUILayout.EndVertical();
-        }
-
 
         // Log Tabs
         private void DrawErrorLogs()
@@ -494,7 +619,7 @@ namespace UnityCopilot.Editor
 
                 GUILayout.BeginVertical();
 
-                    foreach (string log in log.errorLog)
+                    foreach (string log in log.GetErrorLog().GetQueue())
                     {
                         GUILayout.BeginVertical("box");
                             GUILayout.Label(log);
@@ -511,7 +636,7 @@ namespace UnityCopilot.Editor
 
             GUILayout.BeginVertical();
 
-            foreach (string log in log.warningLog)
+            foreach (string log in log.GetWarningLog().GetQueue())
             {
                 GUILayout.BeginVertical("box");
                     GUILayout.Label(log);
@@ -528,7 +653,7 @@ namespace UnityCopilot.Editor
 
             GUILayout.BeginVertical();
 
-            foreach (string log in log.exceptionLog)
+            foreach (string log in log.GetExceptionLog().GetQueue())
             {
                 GUILayout.BeginVertical("box");
                     GUILayout.Label(log);
@@ -545,7 +670,7 @@ namespace UnityCopilot.Editor
 
             GUILayout.BeginVertical();
 
-            foreach (string log in log.messageLog)
+            foreach (string log in log.GetMessageLog().GetQueue())
             {
                 GUILayout.BeginVertical("box");
                     GUILayout.Label(log);
@@ -702,19 +827,37 @@ namespace UnityCopilot.Editor
             switch (selectedAssistant)
             {
                 case Assistant.Programmer:
-                    url = APIEndpoints.ProgrammerPythonUrl;
+                    url = APIEndpoints.ProgrammerUrl;
                     break;
-                case Assistant.Plot:
-                    url = APIEndpoints.PlotPythonUrl;
+                case Assistant.PlotCreator:
+                    url = APIEndpoints.PlotUrl;
                     break;
-                case Assistant.CharacterDesigner:
-                    url = APIEndpoints.CharacterPythonUrl;
+                case Assistant.CharacterCreator:
+                    url = APIEndpoints.CharacterUrl;
                     break;
-                case Assistant.EnvironmentDesigner:
-                    url = APIEndpoints.EnvironmentPythonUrl;
+                case Assistant.EnvironmentCreator:
+                    url = APIEndpoints.EnvironmentUrl;
                     break;
-                case Assistant.StoryDesigner:
-                    url = APIEndpoints.StoryPythonUrl;
+                case Assistant.StoryCreator:
+                    url = APIEndpoints.StoryUrl;
+                    break;
+                case Assistant.StyleCreator:
+                    url = APIEndpoints.StyleUrl;
+                    break;
+                case Assistant.KeywordExtraction:
+                    url = APIEndpoints.KeywordExtractionUrl;
+                    break;
+                case Assistant.GrammarCorrection:
+                    url = APIEndpoints.GrammarCorrectionUrl;
+                    break;
+                case Assistant.Summarizer:
+                    url = APIEndpoints.SummarizationUrl;
+                    break;
+                case Assistant.Critic:
+                    url = APIEndpoints.CriticUrl;
+                    break;
+                case Assistant.Auto:
+                    url = APIEndpoints.AutoUrl;
                     break;
                 default:
                     if (debug) Debug.LogError("Invalid endpoint selected");
@@ -728,7 +871,7 @@ namespace UnityCopilot.Editor
             {
                 role = Role.user.ToString(),
                 content = content,
-                name = "You"
+                name = currentUser.username
             };
             AddMessage(message);
 
@@ -740,9 +883,9 @@ namespace UnityCopilot.Editor
             };
 
             // If debug mode is enabled and there are error messages, add the latest error message to the chat history
-            if (applyLogging && log.errorLog.Count > 0)
+            if (applyLogging && log.GetErrorLog().GetQueue().Count > 0)
             {
-                var latestError = log.GetLatestError();
+                var latestError = log.GetErrorLog().GetLatest();
 
                 var errorMessage = new ChatMessage
                 {
@@ -789,122 +932,11 @@ namespace UnityCopilot.Editor
                 }             
             }
 
-            // Converts the input model into json
-            string jsonData = JsonConvert.SerializeObject(chat);
 
-            if (PlayerPrefs.HasKey("authToken"))
-            {
-                //ChatMessage response = await APIRequest.CallPromptedModel(url, jsonData);
+            ChatMessage response = await APIRequest.CallPromptedModel(url, chat);
 
-                //Debug.Log(response);
-
-                //ChatMessage responseData = JsonConvert.DeserializeObject<ChatMessage>(response);
-
-                //if (response != null)
-                // AddMessage(response);
-            }
-            else
-            {
-                if (debug) Debug.Log("User is Unauthorized and needs to sign in.");
-            }
+            if (response != null)
+                AddMessage(response);
         }
     }
-
-
-
-    public static class HistoryManager
-    {
-        private const string KEY_LIST_KEY = "AllKeys";
-
-        public static void SaveChatHistory(List<ChatMessage> history, string key=null)
-        {
-            if (key == null)
-            {
-                // Use the current DateTime as the key.
-                key = "ChatHistory_" + System.DateTime.Now.ToString("yyyyMMdd_HHmmssfff");
-            }
-
-            string jsonString = JsonConvert.SerializeObject(history);
-            PlayerPrefs.SetString(key, jsonString);
-
-            // Ensure the key is not the master key list before proceeding
-            if (key != KEY_LIST_KEY)
-            {
-                // Get the existing list of keys
-                List<string> keys = GetAllKeys();
-                if (!keys.Contains(key))
-                {
-                    keys.Add(key);
-                    SaveAllKeys(keys);
-                }
-            }
-        }
-
-        public static List<ChatMessage> GetChatHistory(string key, string defaultValue = "")
-        {
-            string jsonString = PlayerPrefs.GetString(key, defaultValue);
-
-            return JsonConvert.DeserializeObject<List<ChatMessage>>(jsonString);
-        }
-
-        public static List<string> GetAllKeys()
-        {
-            if (PlayerPrefs.HasKey(KEY_LIST_KEY))
-            {
-                string jsonString = PlayerPrefs.GetString(KEY_LIST_KEY);
-
-                // Deserialize the jsonString to get the list of keys
-                return JsonConvert.DeserializeObject<List<string>>(jsonString);
-            }
-            else
-            {
-                return new List<string>();
-            }
-        }
-
-        private static void ClearAllChatHistory()
-        {
-            // Retrieve the list of all keys
-            List<string> allKeys = GetAllKeys();
-
-            // Delete each key from PlayerPrefs
-            foreach (string key in allKeys)
-            {
-                PlayerPrefs.DeleteKey(key);
-            }
-
-            // Delete the master key list itself
-            PlayerPrefs.DeleteKey(KEY_LIST_KEY);
-
-            // (Optional) Save changes to PlayerPrefs
-            PlayerPrefs.Save();
-        }
-
-        public static void RemoveChatHistoryForKey(string targetKey)
-        {
-            // Delete the specific key from PlayerPrefs
-            PlayerPrefs.DeleteKey(targetKey);
-
-            // Retrieve the list of all keys
-            List<string> allKeys = GetAllKeys();
-
-            // Remove the target key from the list
-            allKeys.Remove(targetKey);
-
-            // Save the updated list back to PlayerPrefs
-            SaveAllKeys(allKeys);
-
-            // (Optional) Save changes to PlayerPrefs
-            PlayerPrefs.Save();
-        }
-
-        private static void SaveAllKeys(List<string> keys)
-        {
-            string jsonString = JsonConvert.SerializeObject(keys);
-
-            PlayerPrefs.SetString(KEY_LIST_KEY, jsonString);
-            PlayerPrefs.Save();
-        }
-    }
-
 }

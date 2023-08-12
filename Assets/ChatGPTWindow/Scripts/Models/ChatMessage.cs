@@ -9,11 +9,4 @@ namespace UnityCopilot.Models
         public string content;
         public string name;
     }
-
-    [System.Serializable]
-    public class ChatInputModel
-    {
-        public string userMessage;
-        public List<ChatMessage> chatHistory;
-    }
 }

@@ -8,38 +8,14 @@ using Newtonsoft.Json;
 
 namespace UnityCopilot
 {
-    public static class APIRequest
+    public static partial class APIRequest
     {
-        [System.Serializable]
-        private class TokenResponse
-        {
-            public string access_token;
-        }
-
-        [System.Serializable]
-        public class User
-        {
-            public string username;
-            public string email;
-            public string full_name;
-            public bool? disabled;
-            public int credits;
-        }
-
-        [System.Serializable]
-        public class UserRegistrationResponse
-        {
-            public string username;
-            public string email;
-            public string full_name;
-            public int credits;
-            public string access_token;
-            public string token_type;
-        }
-
+        private static bool debug = true;
 
 
         private const string BASE_URL = "http://127.0.0.1:8000";
+
+
 
         private static string GetAuthToken()
         {
@@ -71,7 +47,7 @@ namespace UnityCopilot
             }
             else
             {
-                //Debug.Log($"Response: {webRequest.downloadHandler.text}");
+                if (debug) Debug.Log($"Response: {webRequest.downloadHandler.text}");
 
                 return webRequest.downloadHandler.text;
             }
@@ -91,12 +67,18 @@ namespace UnityCopilot
             // 3. Clear any user-specific data or reset application state
             // This step is highly specific to your application's design and needs.
 
-            Debug.Log(message: "User has loggout out");
+            if(debug) Debug.Log(message: "User has loggout out");
         }
 
         private static async Task<T> SendWebRequest<T>(string url, string method, WWWForm formData = null, string json = null)
         {
-            UnityWebRequest webRequest = new UnityWebRequest(url, method);
+            string combinedUrl = $"{BASE_URL}/{url}";
+
+            if (debug) Debug.Log("Combined Url: " + combinedUrl);
+
+
+            UnityWebRequest webRequest = new UnityWebRequest(combinedUrl, method);
+
             if (formData != null)
             {
                 webRequest.uploadHandler = new UploadHandlerRaw(formData.data);
@@ -136,18 +118,18 @@ namespace UnityCopilot
             formData.AddField("username", username);
             formData.AddField("password", password);
 
-            TokenResponse tokenResponse = await SendWebRequest<TokenResponse>($"{BASE_URL}/login", "POST", formData);
+            TokenResponse tokenResponse = await SendWebRequest<TokenResponse>("login", "POST", formData);
 
             if (tokenResponse != null && !string.IsNullOrEmpty(tokenResponse.access_token))
             {
                 PlayerPrefs.SetString("authToken", tokenResponse.access_token);
                 PlayerPrefs.Save();
-                Debug.Log("Welcome " + username + ", you have logged in successfully!");
+                if (debug) Debug.Log("Welcome " + username + ", you have logged in successfully!");
                 return true;
             }
             else
             {
-                Debug.Log("Login failed: Token not received or invalid");
+                if (debug) Debug.Log("Login failed: Token not received or invalid");
                 return false;
             }
         }
@@ -161,7 +143,22 @@ namespace UnityCopilot
             }
             json += "}";
 
-            return await SendWebRequest<UserRegistrationResponse>($"{BASE_URL}/users/register/", "POST", null, json);
+            if (debug) Debug.Log(json);
+
+            var registrationResponse = await SendWebRequest<UserRegistrationResponse>("register", "POST", null, json);
+
+            if (registrationResponse != null && !string.IsNullOrEmpty(registrationResponse.access_token))
+            {
+                PlayerPrefs.SetString("authToken", registrationResponse.access_token);
+                PlayerPrefs.Save();
+                if (debug) Debug.Log("Welcome " + username + ", you have logged in successfully!");
+                return registrationResponse;
+            }
+            else
+            {
+                if (debug) Debug.Log("Registraion failed: Token not received or invalid");
+                return null;
+            }
         }
 
         public static async Task<bool> DeleteCurrentUser()
@@ -181,64 +178,48 @@ namespace UnityCopilot
         }
 
 
-        private static async Task<User> SendWebRequest(string url, string method, string json)
-        {
-            string token = GetAuthToken();
-
-            if (string.IsNullOrEmpty(token))
-            {
-                Debug.LogError("No token found. Please login first.");
-                return null;
-            }
-
-            UnityWebRequest webRequest = new UnityWebRequest(url, method);
-
-            if (!string.IsNullOrEmpty(json))
-            {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-                webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                webRequest.SetRequestHeader("Content-Type", "application/json");
-            }
-
-            webRequest.downloadHandler = new DownloadHandlerBuffer();
-            webRequest.SetRequestHeader("Authorization", $"Bearer {token}");
-
-            await webRequest.SendWebRequest();
-
-            if (webRequest.result == UnityWebRequest.Result.ConnectionError || webRequest.result == UnityWebRequest.Result.ProtocolError)
-            {
-                Debug.LogError($"Error with request to {url}: {webRequest.error}");
-                return null;
-            }
-            else
-            {
-                User user = JsonUtility.FromJson<User>(webRequest.downloadHandler.text);
-                return user;
-            }
-        }
-
-
         public static async Task<User> GetCurrentUser()
         {
-            string url = $"{BASE_URL}/users/me/";
-            return await SendWebRequest(url, "GET", null);
+            return await SendWebRequest<User>("users/me/", "GET", null);
         }
 
         public static async Task<User> AddCredits(int credits)
         {
-            string url = $"{BASE_URL}/users/me/credits/add/";
             string json = $"{{\"credits\": {credits}}}";
-            return await SendWebRequest(url, "POST", json);
+            return await SendWebRequest<User>("users/me/credits/add/", "POST", null, json);
         }
 
         public static async Task<User> RemoveCredits(int credits)
         {
-            string url = $"{BASE_URL}/users/me/credits/remove/";
             string json = $"{{\"credits\": {credits}}}";
-            return await SendWebRequest(url, "POST", json);
+            return await SendWebRequest<User>("users/me/credits/remove/", "POST", null, json);
         }
 
-        
+        public static async Task<ChatMessage> CallPromptedModel(string url, ChatHistory history)
+        {
+            string jsonData = JsonConvert.SerializeObject(history);
+
+            if (debug) Debug.Log("Json: " + jsonData);
+
+            ChatMessage response = await SendWebRequest<ChatMessage>(url, "POST", null, jsonData);
+
+            if (debug) Debug.Log("Response: " + response);
+
+            if (response != null)
+            {
+                return response;
+            }
+            else
+            {
+                ChatMessage defaultMessage = new ChatMessage()
+                {
+                    role = "assistant",
+                    name = "Default",
+                    content = "I'm sorry, I couldn't fullfill your request."
+                };
+                return default;
+            }
+        }
     }
 }
 
