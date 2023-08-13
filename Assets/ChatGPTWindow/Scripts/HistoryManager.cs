@@ -1,6 +1,8 @@
 using Newtonsoft.Json;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Xml.Serialization;
 using UnityCopilot.Models;
 using UnityEngine;
 
@@ -9,9 +11,10 @@ namespace UnityCopilot
 {
     public static class HistoryManager
     {
+        // player pref saves
         private const string KEY_LIST_KEY = "AllKeys";
 
-        public static void SaveChatHistory(List<ChatMessage> history, string key = null)
+        public static void SaveChatHistoryPlayerPref(List<ChatMessage> history, string key = null)
         {
             if (key == null)
             {
@@ -26,23 +29,23 @@ namespace UnityCopilot
             if (key != KEY_LIST_KEY)
             {
                 // Get the existing list of keys
-                List<string> keys = GetAllKeys();
+                List<string> keys = GetAllKeysPlayerPref();
                 if (!keys.Contains(key))
                 {
                     keys.Add(key);
-                    SaveAllKeys(keys);
+                    SaveAllKeysPlayerPref(keys);
                 }
             }
         }
 
-        public static List<ChatMessage> GetChatHistory(string key, string defaultValue = "")
+        public static List<ChatMessage> GetChatHistoryPlayerPref(string key, string defaultValue = "")
         {
             string jsonString = PlayerPrefs.GetString(key, defaultValue);
 
             return JsonConvert.DeserializeObject<List<ChatMessage>>(jsonString);
         }
 
-        public static List<string> GetAllKeys()
+        public static List<string> GetAllKeysPlayerPref()
         {
             if (PlayerPrefs.HasKey(KEY_LIST_KEY))
             {
@@ -57,10 +60,10 @@ namespace UnityCopilot
             }
         }
 
-        private static void ClearAllChatHistory()
+        private static void ClearAllChatHistoryPlayerPref()
         {
             // Retrieve the list of all keys
-            List<string> allKeys = GetAllKeys();
+            List<string> allKeys = GetAllKeysPlayerPref();
 
             // Delete each key from PlayerPrefs
             foreach (string key in allKeys)
@@ -75,30 +78,59 @@ namespace UnityCopilot
             PlayerPrefs.Save();
         }
 
-        public static void RemoveChatHistoryForKey(string targetKey)
+        public static void RemoveChatHistoryForKeyPlayerPref(string targetKey)
         {
             // Delete the specific key from PlayerPrefs
             PlayerPrefs.DeleteKey(targetKey);
 
             // Retrieve the list of all keys
-            List<string> allKeys = GetAllKeys();
+            List<string> allKeys = GetAllKeysPlayerPref();
 
             // Remove the target key from the list
             allKeys.Remove(targetKey);
 
             // Save the updated list back to PlayerPrefs
-            SaveAllKeys(allKeys);
+            SaveAllKeysPlayerPref(allKeys);
 
             // (Optional) Save changes to PlayerPrefs
             PlayerPrefs.Save();
         }
 
-        private static void SaveAllKeys(List<string> keys)
+        private static void SaveAllKeysPlayerPref(List<string> keys)
         {
             string jsonString = JsonConvert.SerializeObject(keys);
 
             PlayerPrefs.SetString(KEY_LIST_KEY, jsonString);
             PlayerPrefs.Save();
         }
+
+        // Databse implementation
+        public static async void SaveHistoryToDatabase(int key, List<ChatMessage> history)
+        {
+            var chatHistory = new ChatHistoryWithKey()
+            {
+                key = key,
+                history = history,
+            };
+
+            await APIRequest.SaveHistoryToDatabase(chatHistory);
+        }
+
+        public static async Task<List<ChatHistoryWithKey>> GetAllHistoryFromDatabse()
+        {
+            var response = await APIRequest.GetAllHistoryFromDatabase();
+            return response;
+        }
+
+        public static async Task RemoveHistoryFromDatabase(int key)
+        {
+            await APIRequest.RemoveHistoryFromDatabase(key);
+        }
+
+        public static async Task<ChatHistoryWithKey> GetHistoryFromDatabase(int key)
+        {
+            return await APIRequest.GetHistoryFromDatabase(key);
+        }
+
     }
 }

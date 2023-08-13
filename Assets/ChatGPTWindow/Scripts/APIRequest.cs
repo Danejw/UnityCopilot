@@ -107,11 +107,12 @@ namespace UnityCopilot
             }
             else
             {
-                T response = JsonUtility.FromJson<T>(webRequest.downloadHandler.text);
+                T response = JsonConvert.DeserializeObject<T>(webRequest.downloadHandler.text);
                 return response;
             }
         }
         
+        // User
         public static async Task<bool> Login(string username, string password)
         {
             WWWForm formData = new WWWForm();
@@ -177,12 +178,12 @@ namespace UnityCopilot
             return response;
         }
 
-
         public static async Task<User> GetCurrentUser()
         {
             return await SendWebRequest<User>("users/me/", "GET", null);
         }
 
+        // Credits
         public static async Task<User> AddCredits(int credits)
         {
             string json = $"{{\"credits\": {credits}}}";
@@ -195,6 +196,68 @@ namespace UnityCopilot
             return await SendWebRequest<User>("users/me/credits/remove/", "POST", null, json);
         }
 
+        // Chat History
+        public static async Task SaveHistoryToDatabase(ChatHistoryWithKey history)
+        {
+            string url = "users/me/chat_histories/add/";
+
+            string jsonData = JsonConvert.SerializeObject(history);
+
+            if(debug) Debug.Log(jsonData);
+
+            var response = await SendWebRequest<string>(url, "POST", null, jsonData);
+
+            if (response != null)
+            {
+                if (debug) Debug.Log(response);
+            }
+        }
+
+        public static async Task RemoveHistoryFromDatabase(int key)
+        {
+            string url = $"users/me/chat_histories/remove/{key}/";
+
+            string jsonData = JsonConvert.SerializeObject(key);
+
+            if (debug) Debug.Log(jsonData);
+
+            var response = await SendWebRequest<string>(url, "DELETE", null, jsonData);
+
+            if (response != null)
+            {
+                if (debug) Debug.Log(response);
+            }
+        }
+
+        public static async Task<ChatHistoryWithKey> GetHistoryFromDatabase(int key)
+        {
+            string url = $"users/me/chat_history/{key}/";
+
+            var response = await SendWebRequest<ChatHistoryWithKey>(url, "GET", null, null);
+
+            if (response != null)
+            {
+                if (debug) Debug.Log(response);
+                return response;
+            }
+            return null;
+        }
+
+        public static async Task<List<ChatHistoryWithKey>> GetAllHistoryFromDatabase()
+        {
+            string url = $"users/me/chat_histories/";
+
+            List<ChatHistoryWithKey> response = await SendWebRequest<List<ChatHistoryWithKey>>(url, "GET", null, null);
+
+            if (response != null)
+            {
+                if (debug) Debug.Log(response);
+                return response;
+            }
+            return null;
+        }
+
+        // Prompted Models
         public static async Task<ChatMessage> CallPromptedModel(string url, ChatHistory history)
         {
             string jsonData = JsonConvert.SerializeObject(history);
@@ -221,5 +284,6 @@ namespace UnityCopilot
             }
         }
     }
+
 }
 

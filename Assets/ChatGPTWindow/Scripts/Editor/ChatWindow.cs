@@ -9,6 +9,9 @@ using UnityCopilot.Log;
 using UnityCopilot.Utils;
 using UnityCopilot.Models;
 using Newtonsoft.Json;
+using System.Drawing.Printing;
+using Unity.VisualScripting.YamlDotNet.Core.Tokens;
+using static UnityCopilot.Editor.ChatWindow;
 
 namespace UnityCopilot.Editor
 {
@@ -99,15 +102,19 @@ namespace UnityCopilot.Editor
         //Chat Tab Variables
         private string input = string.Empty;
         private Vector2 scrollPosition;
+        private int currentChatlogKey;
         private List<ChatMessage> chatLog = new List<ChatMessage>();
-        
+
         // Drag and Drop Stuff
         private Vector2 scrollPositionDroppedFiles;
         private DragAndDropBag dropbag = new DragAndDropBag();
 
         // History Tab
-        private Vector2 scrollPositionHistory;
-        private bool showChatHistorys = false;
+        private bool drawHistories = false;
+        List<ChatHistoryWithKey> chatHistories = new List<ChatHistoryWithKey>();
+        
+
+
 
         // Log tab variables
         private LogController log = new LogController();
@@ -140,20 +147,26 @@ namespace UnityCopilot.Editor
             if (skin != null) GUI.skin = skin;
 
 
-
             DrawUserInfo();
 
+            
+
             DrawSignInOptions();
+
+
 
             DrawMainToolbar();
         }
 
-        private void OnEnable()
+        private async void OnEnable()
         {
             // Set up the logger tp listen for log messages
             Application.logMessageReceived += HandleLog;
 
             skin = AssetDatabase.LoadAssetAtPath<GUISkin>(SKIN_PATH);
+
+            // load all chat histories
+            chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
         }
 
         private void OnDisable()
@@ -242,7 +255,7 @@ namespace UnityCopilot.Editor
                     username = string.Empty;
                     password = string.Empty;
 
-                    userSatus = UserStatus.LoggedIn;
+                    UserLogin();
                 }
             }
 
@@ -332,23 +345,26 @@ namespace UnityCopilot.Editor
                 // Add a buy button next to the credits
                 if (GUILayout.Button("Logout"))
                 {
-                    APIRequest.Logout();
-                    currentUser = null;
-                    username = string.Empty;
-                    password = string.Empty;
+                    UserLogout();
+                }
 
-                    userSatus = UserStatus.LoggedOut;
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Account"))
+                {
+                    // TODO: create an account tab and state that will display the user's information
+                    //userSatus = UserStatus.Account;
                 }
 
                 // Adds a flexible space which pushes everything after it to the right
                 GUILayout.FlexibleSpace();
-
                 // Display the credits
                 GUILayout.Label($"Credits: {currentUser.credits}");
 
                 // Add a buy button next to the credits
                 if (GUILayout.Button("Buy"))
                 {
+                    // TODO: create a buy credits page and a state switch to it when this button is pressed
+
                     // Handle the button click logic here
                     currentUser = await APIRequest.AddCredits(5);
                     if (debug) Debug.Log(currentUser.credits);
@@ -365,24 +381,39 @@ namespace UnityCopilot.Editor
 
         }
 
-        private void DrawChatTab()
+        private async void DrawChatTab()
         {
+            // Chat history stuff
             GUILayout.BeginHorizontal();
-                // History
-                if (GUILayout.Button("Conversations"))
-                {
-                    if (showChatHistorys) showChatHistorys = false;
-                    else showChatHistorys = true;
-                }
+            if (GUILayout.Button("New Conversation"))
+            {
+                chatLog = new List<ChatMessage>();
+                currentChatlogKey = 0;
+            }
 
-                if (GUILayout.Button("Save Conversation"))
+            if (GUILayout.Button("Past Conversations"))
+            {
+                if (drawHistories) { drawHistories = false; }
+                else { drawHistories = true; }
+            }
+
+            if (GUILayout.Button("Save Conversation"))
+            {
+                // TODO: do something cooler with naming the keys. They're ints at the moment, but making them strings would mean we have to change the database too :/
+                if (currentChatlogKey != 0)
                 {
-                    HistoryManager.SaveChatHistory(chatLog);
+                    HistoryManager.SaveHistoryToDatabase(currentChatlogKey, chatLog);
+
+                    // reload the chat histories
+                    chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
                 }
+                else
+                    currentChatlogKey = chatHistories.Count + 1;
+            }
             GUILayout.EndHorizontal();
 
-            if (showChatHistorys)
-                DrawHistoryTab();
+            if (drawHistories)
+                DrawHistoryFromDatabase();
 
             // Select an Assistant
             selectedAssistant = (Assistant)EditorGUILayout.EnumPopup("Assistant", selectedAssistant);
@@ -546,7 +577,7 @@ namespace UnityCopilot.Editor
         // History Tab
         private void DrawHistoryTab()
         {
-            List<string> keys = HistoryManager.GetAllKeys();
+            List<string> keys = HistoryManager.GetAllKeysPlayerPref();
 
             if (keys != null)
             {
@@ -557,7 +588,7 @@ namespace UnityCopilot.Editor
                     if (GUILayout.Button(key))
                     {
                         // Do something when the key is pressed, for example, fetch the value from PlayerPrefs
-                        chatLog = HistoryManager.GetChatHistory(key);
+                        chatLog = HistoryManager.GetChatHistoryPlayerPref(key);
                     }
 
                     // Delete button
@@ -570,7 +601,7 @@ namespace UnityCopilot.Editor
 
                         if (confirm)
                         {
-                            HistoryManager.RemoveChatHistoryForKey(key);
+                            HistoryManager.RemoveChatHistoryForKeyPlayerPref(key);
                         }
                     }
 
@@ -581,6 +612,40 @@ namespace UnityCopilot.Editor
             {
                 GUILayout.Label("No keys found!");
             }
+        }
+
+        private async void DrawHistoryFromDatabase()
+        {
+            foreach(var history in chatHistories)
+            {
+                GUILayout.BeginHorizontal();
+
+                if (GUILayout.Button(history.key.ToString()))
+                {
+                    // Do something when the key is pressed, for example, fetch the value from PlayerPrefs
+                    chatLog = history.history;
+                    currentChatlogKey = history.key;
+                }
+
+                // Delete button
+                if (GUILayout.Button("Delete", WarningButtonStyle(), GUILayout.Width(60)))  // Setting a fixed width for the delete button
+                {
+                    bool confirm = EditorUtility.DisplayDialog(
+                        "Confirm Delete",
+                        $"Are you sure you want to delete chat history for key: {history.key}?",
+                        "Yes", "No");
+
+                    if (confirm)
+                    {
+                        await HistoryManager.RemoveHistoryFromDatabase(history.key);
+                        currentChatlogKey = 0;
+
+                        // reload chat histories
+                        chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
+                    }
+                }
+                GUILayout.EndHorizontal();
+            }         
         }
 
 
@@ -943,6 +1008,32 @@ namespace UnityCopilot.Editor
 
             if (response != null)
                 AddMessage(response);
+        }
+
+
+        // User
+        private void UserLogout()
+        {
+            APIRequest.Logout();
+
+            // clear all user data
+            currentUser = null;
+            username = string.Empty;
+            password = string.Empty;
+
+            chatLog.Clear();
+            chatHistories.Clear();
+
+            userSatus = UserStatus.LoggedOut;
+        }
+
+        private async void UserLogin()
+        {
+            userSatus = UserStatus.LoggedIn;
+
+
+            // load user's chat history
+            chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
         }
     }
 }
