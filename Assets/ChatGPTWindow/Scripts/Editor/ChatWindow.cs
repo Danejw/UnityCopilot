@@ -8,10 +8,6 @@ using System.Threading.Tasks;
 using UnityCopilot.Log;
 using UnityCopilot.Utils;
 using UnityCopilot.Models;
-using Newtonsoft.Json;
-using System.Drawing.Printing;
-using Unity.VisualScripting.YamlDotNet.Core.Tokens;
-using static UnityCopilot.Editor.ChatWindow;
 
 namespace UnityCopilot.Editor
 {
@@ -20,7 +16,11 @@ namespace UnityCopilot.Editor
         // TODO: allow the ability to use all types of logs as the context. But do it in a way that I won't cloggin up the context length
         // TODO: allow the ability to use uploaded folders and files as part of the conext without clogging up the context length
 
-        private bool debug = true;
+        private bool debug = false;
+
+        private string userApiKey;
+
+        // TODO: make the user apikey acessable in a static file
 
         // enums
         public enum Tab
@@ -72,6 +72,7 @@ namespace UnityCopilot.Editor
 
         public enum SettingOptions
         {
+            Account,
             Pathing,
             Appearance
         }
@@ -97,6 +98,7 @@ namespace UnityCopilot.Editor
         [SerializeField] private string scriptPath;
         [SerializeField] private string resourcesPath;
         [SerializeField] private string persistentPath;
+        [SerializeField] private string workspacePath;
 
 
         //Chat Tab Variables
@@ -134,7 +136,11 @@ namespace UnityCopilot.Editor
         string registerPassword = string.Empty;
         string registerFullName = string.Empty;
 
-
+        // Loading
+        private bool isRequestInProgress = false;
+        private float rotationAngle = 0;
+        private Texture2D loadingImage;
+        private const string LOADING_IMAGE_PATH = "Assets/ChatGPTWindow/Images/MoonSpinner.png";
 
         [MenuItem("Tools/Unity Co-Pilot")]
         public static void ShowWindow()
@@ -158,15 +164,17 @@ namespace UnityCopilot.Editor
             DrawMainToolbar();
         }
 
-        private async void OnEnable()
+        private void OnEnable()
         {
             // Set up the logger tp listen for log messages
             Application.logMessageReceived += HandleLog;
 
             skin = AssetDatabase.LoadAssetAtPath<GUISkin>(SKIN_PATH);
+ 
+            // Load the image from a file or Resources folder
+            loadingImage = AssetDatabase.LoadAssetAtPath<Texture2D>(LOADING_IMAGE_PATH);
 
-            // load all chat histories
-            chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
+            if(debug) Debug.Log(loadingImage);
         }
 
         private void OnDisable()
@@ -267,6 +275,8 @@ namespace UnityCopilot.Editor
 
             GUILayout.EndVertical();
             GUILayout.EndArea(); // End the GUI area
+
+            DrawPersonalLinks();
         }
 
 
@@ -330,6 +340,8 @@ namespace UnityCopilot.Editor
 
             GUILayout.EndVertical();
             GUILayout.EndArea();
+
+            DrawPersonalLinks();
         }
 
         private async Task DrawUserInfo()
@@ -348,12 +360,6 @@ namespace UnityCopilot.Editor
                     UserLogout();
                 }
 
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button("Account"))
-                {
-                    // TODO: create an account tab and state that will display the user's information
-                    //userSatus = UserStatus.Account;
-                }
 
                 // Adds a flexible space which pushes everything after it to the right
                 GUILayout.FlexibleSpace();
@@ -376,6 +382,7 @@ namespace UnityCopilot.Editor
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("User needs to log in.");
+
                 GUILayout.EndHorizontal();
             }
 
@@ -498,6 +505,12 @@ namespace UnityCopilot.Editor
             GUILayout.EndVertical();
             GUILayout.EndScrollView();
 
+            // loading spinner
+            if (isRequestInProgress)
+            {
+                DrawLoadingAnimation();
+            }
+
             // Drag and Drop Files
             DrawDropArea();
 
@@ -505,17 +518,18 @@ namespace UnityCopilot.Editor
             GUILayout.BeginHorizontal();
                 input = GUILayout.TextArea(input, GUILayout.ExpandWidth(true), GUILayout.Width(position.width - 57), GUILayout.Height(60));
 
-                // Disables the send button while sending a request
-                //GUI.enabled = false;
-                if (GUILayout.Button("Send", GoButtonStyle(), GUILayout.ExpandWidth(false), GUILayout.Height(60)) && !string.IsNullOrEmpty(input))
+            // Disables the send button while sending a request
+            GUI.enabled = !isRequestInProgress;
+            if (GUILayout.Button("Send", GoButtonStyle(), GUILayout.ExpandWidth(false), GUILayout.Height(60)) && !string.IsNullOrEmpty(input))
                 {
                     string inputCopy = input;  // Copy the input string
                     input = string.Empty;
-                    SetUpMessage(inputCopy);
-                }
-            //GUI.enabled = true;
+                    SetUpMessage(inputCopy);              
+            }
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
 
+            
             // Clear All
             if (GUILayout.Button("Clear Messages", WarningButtonStyle()))
             {
@@ -529,6 +543,7 @@ namespace UnityCopilot.Editor
                     chatLog.Clear();
                 }
             }
+            
 
             DrawDroppedFiles();
         }
@@ -539,6 +554,9 @@ namespace UnityCopilot.Editor
 
             switch (selectedSettingsTab)
             {
+                case SettingOptions.Account:
+                    DrawAccountTab();
+                    break;
                 case SettingOptions.Pathing:
                     DrawPathTab();
                     break;
@@ -546,6 +564,8 @@ namespace UnityCopilot.Editor
                     DrawAppearanceTab();
                     break;
             }
+
+            DrawPersonalLinks();
         }
 
         private void DrawLogTab()
@@ -571,10 +591,13 @@ namespace UnityCopilot.Editor
                     DrawMessageLogs();
                     break;
             }
+
+            DrawPersonalLinks();
         }
 
 
         // History Tab
+        // Playerprefs version of saving chat histories
         private void DrawHistoryTab()
         {
             List<string> keys = HistoryManager.GetAllKeysPlayerPref();
@@ -616,6 +639,8 @@ namespace UnityCopilot.Editor
 
         private async void DrawHistoryFromDatabase()
         {
+            if (chatHistories == null) return;
+
             foreach(var history in chatHistories)
             {
                 GUILayout.BeginHorizontal();
@@ -649,12 +674,50 @@ namespace UnityCopilot.Editor
         }
 
 
+
+
         // Settings Tabs
+        private void DrawAccountTab()
+        {
+            if (currentUser == null) return;
+
+            GUILayout.BeginVertical();
+
+                GUILayout.Space(10);
+
+                // Title for the Account tab
+                GUILayout.Label("Account Information", EditorStyles.boldLabel);
+
+                // Display username
+                GUILayout.Label("Username: " + currentUser.username);
+
+                // Display email
+                GUILayout.Label("Email: " + currentUser.email);
+
+                // Display API input area
+                GUILayout.Label("API Key:");
+                
+                userApiKey = EditorGUILayout.TextField(userApiKey);
+
+                
+                if (!string.IsNullOrEmpty(userApiKey))
+                    APIKey.SetAPIKey(userApiKey);
+
+            GUILayout.EndVertical();
+        }
+
         private void DrawPathTab()
         {
             GUILayout.BeginVertical();
 
             GUILayout.Space(10);
+
+
+            GUILayout.Label("Workspace:");
+            workspacePath = GUILayout.TextField(workspacePath);
+            if (workspacePath == string.Empty) { workspacePath = Path.Combine(Application.dataPath, "ChatGPTWindow/AiWorkspace/Scripts/"); }
+
+
 
             GUILayout.Label("To be implemented for loading folders into the context");
 
@@ -760,10 +823,17 @@ namespace UnityCopilot.Editor
 
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();  // Add a flexible space before the button
+
+            if (GUILayout.Button("Create", GUILayout.Width(80), GUILayout.Height(20)))
+            {
+                FileUtils.WriteCSharpFile(workspacePath, code);
+            }
+
             if (GUILayout.Button("Copy", GUILayout.Width(80), GUILayout.Height(20)))
             {
                 EditorGUIUtility.systemCopyBuffer = code;
             }
+
             GUILayout.EndHorizontal();
 
             EditorGUI.BeginDisabledGroup(false);
@@ -829,6 +899,79 @@ namespace UnityCopilot.Editor
             }
 
             GUILayout.EndScrollView();
+        }
+
+        private void DrawLoadingAnimation()
+        {
+            if (isRequestInProgress)
+            {
+                // Calculate the rotation angle based on time
+                rotationAngle += Time.deltaTime * 100;
+                rotationAngle %= 360;
+
+                // Save the current GUI matrix
+                Matrix4x4 matrixBackup = GUI.matrix;
+
+                // Calculate the center of the rotating object
+                Vector2 pivotPoint = new Vector2(position.width / 2, position.height / 2);
+
+                // Perform rotation
+                GUIUtility.RotateAroundPivot(rotationAngle, pivotPoint);
+
+                // Draw the rotating object (e.g., a circle)
+                GUI.DrawTexture(new Rect(pivotPoint.x - loadingImage.width / 8, pivotPoint.y - loadingImage.height / 8, loadingImage.width / 4, loadingImage.height / 4), loadingImage);
+
+                // Restore the GUI matrix
+                GUI.matrix = matrixBackup;
+
+                // You can use Repaint() to refresh the window and keep the animation smooth
+                Repaint();
+            }
+        }
+
+        // Personal links
+        private void DrawPersonalLinks()
+        {
+
+            GUILayout.FlexibleSpace();
+
+            GUILayout.BeginHorizontal();
+
+            // Define a style for the link text
+            GUIStyle linkStyle = new GUIStyle(EditorStyles.label);
+            linkStyle.normal.textColor = Color.cyan;
+            linkStyle.fontStyle = FontStyle.Bold;
+            linkStyle.alignment = TextAnchor.MiddleCenter;
+
+            // List of links
+            List<KeyValuePair<string, string>> links = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("Ko-fi", Links.DonateViaKofi),
+                new KeyValuePair<string, string>("Stripe", Links.DonateViaStripe),
+                new KeyValuePair<string, string>("Danejw.com", Links.DanejwWebsite),
+                new KeyValuePair<string, string>("YouTube", Links.DanejwYouTube),
+                // Add more links as needed
+            };
+
+            // Iterate through links and create clickable labels
+            foreach (var link in links)
+            {
+                CreateLink(link.Key, link.Value, linkStyle);
+                GUILayout.Space(10); // Space between links
+            }
+
+            GUILayout.EndHorizontal();
+        }
+
+        private void CreateLink(string linkText, string linkUrl, GUIStyle linkStyle)
+        {
+            GUILayout.Label(linkText, linkStyle);
+            Rect rect = GUILayoutUtility.GetLastRect();
+            if (Event.current.type == EventType.MouseUp && rect.Contains(Event.current.mousePosition))
+            {
+                Application.OpenURL(linkUrl);
+                GUIUtility.ExitGUI();
+            }
         }
 
 
@@ -1003,11 +1146,19 @@ namespace UnityCopilot.Editor
                 }             
             }
 
+            // ToDo: check for the apikey and send it with the request
 
+            isRequestInProgress = true;
             ChatMessage response = await APIRequest.CallPromptedModel(url, chat);
+            isRequestInProgress = false;
+
+            if(debug) Debug.Log(response);
 
             if (response != null)
                 AddMessage(response);
+
+            UpdateUserData();
+
         }
 
 
@@ -1031,9 +1182,18 @@ namespace UnityCopilot.Editor
         {
             userSatus = UserStatus.LoggedIn;
 
-
             // load user's chat history
             chatHistories = await HistoryManager.GetAllHistoryFromDatabse();
+        }
+
+        private async void UpdateUserData()
+        {
+            currentUser = await APIRequest.GetCurrentUser();
+
+            if (currentUser == null)
+            {
+                UserLogout();
+            }
         }
     }
 }

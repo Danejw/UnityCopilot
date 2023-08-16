@@ -5,52 +5,21 @@ using UnityCopilot.Models;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace UnityCopilot
 {
     public static partial class APIRequest
     {
-        private static bool debug = true;
+        private static bool debug = false;
 
 
         private const string BASE_URL = "http://127.0.0.1:8000";
 
 
-
         private static string GetAuthToken()
         {
             return PlayerPrefs.GetString("authToken", "");
-        }
-
-        
-        public static async Task<string> SendRequestToPythonAPI(string url, string json, string token = null)
-        {
-            UnityWebRequest webRequest = new UnityWebRequest(url, "POST");
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-            webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            webRequest.downloadHandler = new DownloadHandlerBuffer();
-            webRequest.SetRequestHeader("Content-Type", "application/json");
-
-            // If a token is provided, set the Authorization header
-            if (!string.IsNullOrEmpty(token))
-            {
-                webRequest.SetRequestHeader("Authorization", $"Bearer {token}");
-            }
-
-            await webRequest.SendWebRequest();
-
-            if (webRequest.result == UnityWebRequest.Result.ConnectionError || webRequest.result == UnityWebRequest.Result.ProtocolError)
-            {
-                Debug.Log($"Error: {webRequest.error}");
-
-                return null;
-            }
-            else
-            {
-                if (debug) Debug.Log($"Response: {webRequest.downloadHandler.text}");
-
-                return webRequest.downloadHandler.text;
-            }
         }
 
 
@@ -70,7 +39,7 @@ namespace UnityCopilot
             if(debug) Debug.Log(message: "User has loggout out");
         }
 
-        private static async Task<T> SendWebRequest<T>(string url, string method, WWWForm formData = null, string json = null)
+        private static async Task<T> SendWebRequest<T>(string url, string method, WWWForm formData = null, string json = null, string apiKey = null)
         {
             string combinedUrl = $"{BASE_URL}/{url}";
 
@@ -83,12 +52,18 @@ namespace UnityCopilot
             {
                 webRequest.uploadHandler = new UploadHandlerRaw(formData.data);
                 webRequest.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+                if (apiKey != null)
+                    webRequest.SetRequestHeader("Authorization", "Bearer " + apiKey);
             }
             else if (!string.IsNullOrEmpty(json))
             {
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
                 webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 webRequest.SetRequestHeader("Content-Type", "application/json");
+
+                if (apiKey != null)
+                    webRequest.SetRequestHeader("Authorization", "Bearer " + apiKey);
             }
 
             string token = GetAuthToken();
@@ -102,13 +77,40 @@ namespace UnityCopilot
 
             if (webRequest.result == UnityWebRequest.Result.ConnectionError || webRequest.result == UnityWebRequest.Result.ProtocolError)
             {
-                Debug.LogError($"Error with request to {url}: {webRequest.error}");
+                if (debug) Debug.LogError($"Error with request to {url}: {webRequest.error}");
+
+                if (webRequest.responseCode == 401)
+                {
+                    Logout();
+                }
+
+
                 return default(T);
             }
             else
             {
-                T response = JsonConvert.DeserializeObject<T>(webRequest.downloadHandler.text);
-                return response;
+                if (debug) Debug.Log(webRequest.downloadHandler.text);
+
+                JObject parsedResponse = JObject.Parse(webRequest.downloadHandler.text);
+
+                if(debug) Debug.Log(parsedResponse.ToString());
+
+                // Check for an "error" key
+                if (parsedResponse["error"] != null)
+                {
+                    string errorMessage = parsedResponse["error"].ToString();
+                    if (debug) Debug.LogError("Error: " + errorMessage);
+                    return default; // Handle error as needed, e.g., return a default value
+                }
+                else
+                {
+                    // Deserialize into the expected type and return
+                    T response = JsonConvert.DeserializeObject<T>(webRequest.downloadHandler.text);
+
+                    if (debug) Debug.Log(response.ToString());
+
+                    return response;
+                }
             }
         }
         
@@ -258,13 +260,13 @@ namespace UnityCopilot
         }
 
         // Prompted Models
-        public static async Task<ChatMessage> CallPromptedModel(string url, ChatHistory history)
+        public static async Task<ChatMessage> CallPromptedModel(string url, ChatHistory history, string apiKey = null)
         {
             string jsonData = JsonConvert.SerializeObject(history);
 
             if (debug) Debug.Log("Json: " + jsonData);
 
-            ChatMessage response = await SendWebRequest<ChatMessage>(url, "POST", null, jsonData);
+            ChatMessage response = await SendWebRequest<ChatMessage>(url, "POST", null, jsonData, apiKey);
 
             if (response != null)
             {

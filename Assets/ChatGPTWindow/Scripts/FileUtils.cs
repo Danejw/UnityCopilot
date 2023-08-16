@@ -84,10 +84,44 @@ namespace UnityCopilot.Utils
             }
         }
 
+
+        public static bool WriteCSharpFile(string filePath, string fileContent)
+        {
+            // Extract the class name using regex
+            Match match = Regex.Match(fileContent, @"public class (\w+)");
+
+            if (match.Success && match.Groups.Count > 1)
+            {
+                string className = match.Groups[1].Value;
+
+                // Name of the new script file
+                string scriptName = className + ".cs";
+
+                // Full path to the new script file
+                string fullPath = Path.Combine(filePath, scriptName);
+
+                // Write the .cs file
+                File.WriteAllText(fullPath, fileContent);
+
+                // Refresh the asset database to show the new file in the Unity Editor
+                AssetDatabase.Refresh();
+
+                return true;
+            }
+            else
+            {
+                Debug.LogError("Failed to extract class name from file content.");
+
+                return false;
+            }
+        }
+
+
         // This regular expression tries to match methods in a C# file.
         // It's simplistic and won't handle edge cases.
         private static readonly string methodPattern = @"(public|private|protected|static|void|\w+ \w+)(\s+\w+\s*)\(([^)]*)\)\s*{";
 
+        // This doesnt work as expected but im leaving it here for inspiration
         public static List<string> CSharpCodeSpliter(UnityEngine.Object obj)
         {
             string path = AssetDatabase.GetAssetPath(obj);
